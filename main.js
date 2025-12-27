@@ -1,32 +1,21 @@
-// main.js
-import { newGameState, newCharacter, MAX_CHARS, newRelation, relationKey, getZodiac } from "./sim/state.js";
-import { runOneMonth } from "./sim/engine.js";
+import {
+  newGameState, newCharacter, MAX_CHARS,
+  monthToYearMonth, MBTI_LIST, zodiacOptions,
+} from "./sim/state.js";
+import { runOneMonth, applyChoice } from "./sim/engine.js";
 import { renderAll } from "./ui/render.js";
-import { showScriptModal } from "./ui/modal.js"
+import { showRelationsModal } from "./ui/relations_modal.js";
+import { appendLogs, clearLogs } from "./ui/log.js";
 
-/**
- * 1) Worker URL 내장
- * 아래 값을 본인 Worker URL로 바꿔서 커밋하면 됩니다.
- * 예: https://raising-sim-gemini.abcde.workers.dev
- */
-const WORKER_URL = "https://gochi-simulator.madeinpain30.workers.dev";
+const WORKER_URL = "https://YOUR_WORKER.your-subdomain.workers.dev"; // 내장
 
-/**
- * 로컬 저장 키/함수는 "첫 실행 이전"에 있어야 함 (TDZ 방지)
- */
-const LS_KEY = "raising_sim_save_v2_kr";
-function saveToLocal(s) {
-  localStorage.setItem(LS_KEY, JSON.stringify(s));
-}
-function loadFromLocal() {
+const LS_KEY = "raising_sim_save_v3";
+const saveToLocal = (s) => localStorage.setItem(LS_KEY, JSON.stringify(s));
+const loadFromLocal = () => {
   const raw = localStorage.getItem(LS_KEY);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
-}
-
-// (선택) 부트 인디케이터 업데이트
-const boot = document.getElementById("boot-indicator");
-if (boot) boot.textContent = "main.js 실행됨 (이제 버튼 클릭 가능해야 함)";
+};
 
 const els = {
   btnNew: document.getElementById("btnNew"),
@@ -35,77 +24,137 @@ const els = {
   btnExport: document.getElementById("btnExport"),
   btnAddChar: document.getElementById("btnAddChar"),
   btnRun: document.getElementById("btnRun"),
+  btnClearLog: document.getElementById("btnClearLog"),
   chkGemini: document.getElementById("chkGemini"),
+  setupHint: document.getElementById("setupHint"),
+
   charList: document.getElementById("charList"),
-  relBox: document.getElementById("relBox"),
   scheduleBox: document.getElementById("scheduleBox"),
-  statsBox: document.getElementById("statsBox"),
   timeBox: document.getElementById("timeBox"),
   moneyBox: document.getElementById("moneyBox"),
+
+  logBox: document.getElementById("logBox"),
   modalRoot: document.getElementById("modalRoot"),
 };
 
 let state = loadFromLocal() ?? newGameState();
 state.settings.workerUrl = WORKER_URL;
 
-function ensureRelationsExist() {
-  if (state.characters.length < 2) return;
-  for (let i = 0; i < state.characters.length; i++) {
-    for (let j = i + 1; j < state.characters.length; j++) {
-      const a = state.characters[i], b = state.characters[j];
-      const key = relationKey(a.id, b.id);
-      if (!state.relations[key]) state.relations[key] = newRelation("strangers", {});
-    }
-  }
-}
-
-function rerender() {
-  ensureRelationsExist();
-  els.chkGemini.checked = !!state.settings.useGemini;
-  renderAll(state, els, handlers);
-}
-
 const handlers = {
-  onEditChar: (id) => {
+  onAddChar: () => {
+    if (!state.setupUnlocked) return;
+    if (state.characters.length >= MAX_CHARS) return;
+
+    state.characters.push(newCharacter({
+      name: `캐릭터${state.characters.length + 1}`,
+      mbti: "INFP",
+      zodiacBlessing: null,
+      birthM: 1,
+      birthD: 1,
+    }));
+    rerender();
+  },
+
+  onOpenRelations: (fromId) => {
+    showRelationsModal({
+      rootEl: els.modalRoot,
+      state,
+      fromId,
+      setupUnlocked: state.setupUnlocked,
+      onChangePreset: (toId, presetId) => {
+        if (!state.setupUnlocked) return;
+        state.relations[`${fromId}->${toId}`].preset = presetId;
+        rerender();
+      },
+    });
+  },
+
+  onUpdateCharSetup: (id, patch) => {
+    if (!state.setupUnlocked) return;
     const c = state.characters.find(x => x.id === id);
     if (!c) return;
 
-    const name = prompt("이름", c.name) ?? c.name;
-    const mbti = (prompt("MBTI (예: INFP)", c.mbti) ?? c.mbti).toUpperCase();
-    const m = Number(prompt("생일 월 (1-12)", String(c.birthday.m)) ?? c.birthday.m);
-    const d = Number(prompt("생일 일 (1-31)", String(c.birthday.d)) ?? c.birthday.d);
+    // setup only
+    if (patch.name != null) c.name = String(patch.name).slice(0, 20) || c.name;
+    if (patch.mbti != null) c.mbti = patch.mbti;
+    if (patch.birthM != null) c.birthday.m = Number(patch.birthM);
+    if (patch.birthD != null) c.birthday.d = Number(patch.birthD);
 
-    c.name = name.trim() || c.name;
-    c.mbti = mbti.trim() || c.mbti;
-    c.birthday.m = Number.isFinite(m) ? m : c.birthday.m;
-    c.birthday.d = Number.isFinite(d) ? d : c.birthday.d;
-    c.zodiac = getZodiac(c.birthday.m, c.birthday.d);
+    // 별자리 축복은 “고정 선택”도 가능하게(원하면)
+    if (patch.zodiac != null) c.zodiac = patch.zodiac;
 
     rerender();
   },
 
   onRemoveChar: (id) => {
+    if (!state.setupUnlocked) return;
     if (state.characters.length === 1) return;
     state.characters = state.characters.filter(c => c.id !== id);
 
-    const newRel = {};
-    for (const [k, v] of Object.entries(state.relations)) {
-      if (!k.split("|").includes(id)) newRel[k] = v;
+    // 관계도 정리
+    const nextRel = {};
+    for (const k of Object.keys(state.relations)) {
+      const [from, to] = k.split("->");
+      if (from !== id && to !== id) nextRel[k] = state.relations[k];
     }
-    state.relations = newRel;
+    state.relations = nextRel;
+    ensureRelations();
     rerender();
   },
 
-  onApplyPreset: (key, presetId, crushFromId) => {
-    const meta = {};
-    if (presetId === "crush") meta.crushFrom = crushFromId;
-    state.relations[key] = newRelation(presetId, meta);
+  onApplyChoice: (entryId, choiceTag) => {
+    // 로그 엔트리에 붙어있는 버튼 처리
+    const entry = state.log.entries.find(e => e.id === entryId);
+    if (!entry || entry.choiceMade) return;
+    entry.choiceMade = choiceTag;
+    applyChoice(state, entry, choiceTag);
+    saveToLocal(state);
     rerender();
   },
 };
 
+function ensureRelations() {
+  // 단방향: A->B, B->A 각각 보장
+  for (const a of state.characters) {
+    for (const b of state.characters) {
+      if (a.id === b.id) continue;
+      const key = `${a.id}->${b.id}`;
+      if (!state.relations[key]) {
+        state.relations[key] = {
+          preset: "초면",
+          stage: "초면",
+          affinity: 0,
+          trust: 10,
+          tension: 10,
+          romance: 0,
+        };
+      }
+    }
+  }
+}
+
+function rerender() {
+  ensureRelations();
+
+  els.chkGemini.checked = !!state.settings.useGemini;
+
+  // setup hint
+  if (state.setupUnlocked) {
+    els.setupHint.textContent = "초기 설정 단계: 캐릭터/관계를 정한 뒤 ‘이번 달 진행’을 누르면 잠깁니다.";
+  } else {
+    els.setupHint.textContent = "진행 중: 캐릭터/관계 설정은 잠겨 있습니다.";
+  }
+
+  renderAll(state, els, handlers);
+
+  // 로그 렌더
+  appendLogs(els.logBox, state, handlers);
+}
+
+els.btnAddChar.addEventListener("click", handlers.onAddChar);
+
 els.btnNew.addEventListener("click", () => {
-  if (!confirm("새 게임을 시작할까요? (현재 진행은 사라집니다)")) return;
+  if (!confirm("새 게임을 시작할까요? (저장되지 않은 진행은 사라집니다)")) return;
   state = newGameState();
   state.settings.workerUrl = WORKER_URL;
   rerender();
@@ -132,83 +181,101 @@ els.btnExport.addEventListener("click", () => {
   a.click();
 });
 
-els.btnAddChar.addEventListener("click", () => {
-  if (state.characters.length >= MAX_CHARS) return;
-
-  const name = prompt("이름", `캐릭터${state.characters.length + 1}`) ?? "";
-  const mbti = (prompt("MBTI (예: INFP)", "INFP") ?? "INFP").toUpperCase();
-  const m = Number(prompt("생일 월 (1-12)", "1") ?? "1");
-  const d = Number(prompt("생일 일 (1-31)", "1") ?? "1");
-
-  state.characters.push(newCharacter({
-    name: name.trim() || `캐릭터${state.characters.length + 1}`,
-    mbti,
-    birthM: m,
-    birthD: d,
-  }));
-  ensureRelationsExist();
+els.btnClearLog.addEventListener("click", () => {
+  if (!confirm("로그를 비울까요?")) return;
+  clearLogs(state);
+  saveToLocal(state);
   rerender();
 });
 
 els.chkGemini.addEventListener("change", () => {
   state.settings.useGemini = els.chkGemini.checked;
+  saveToLocal(state);
   rerender();
 });
 
 els.btnRun.addEventListener("click", async () => {
-  const schedulesByCharId = {};
-  state.characters.forEach(c => {
+  // 스케줄 수집
+  const schedules = {};
+  for (const c of state.characters) {
     const sel = els.scheduleBox.querySelector(`select[data-sel="${c.id}"]`);
-    schedulesByCharId[c.id] = sel?.value ?? "rest";
-  });
+    schedules[c.id] = sel?.value ?? "rest";
+  }
 
-  const result = runOneMonth(state, schedulesByCharId);
-  state = result.state;
+  // 첫 진행 시 setup 잠금
+  if (state.setupUnlocked) {
+    state.setupUnlocked = false;
+  }
 
-  showScriptModal({
-    rootEl: els.modalRoot,
-    cards: result.cards,
-    state,
-    onNeedHighlight: async () => {
-      if (!state.settings.useGemini) return null;
-      const url = (state.settings.workerUrl ?? "").trim();
-      if (!url || url.includes("YOUR_WORKER")) return null;
-      try {
-        return await fetchHighlightCard(url, state, schedulesByCharId);
-      } catch {
-        return null;
-      }
-    },
-    onDone: () => rerender(),
-  });
+  // 엔진 진행(템플릿 이벤트 + 관계 이벤트 + 생일 + 별자리 + 12월 대회)
+  const result = runOneMonth(state, schedules);
+
+  // AI 이벤트를 “추가로” 많이 붙임(월당 N개)
+  if (state.settings.useGemini && state.settings.workerUrl && !state.settings.workerUrl.includes("YOUR_WORKER")) {
+    const extraN = 3 + Math.min(3, state.characters.length); // 빈도 증가
+    const aiEntries = await fetchAiEventsBatch(state, schedules, extraN).catch(() => []);
+    result.newLogEntries.push(...aiEntries);
+  }
+
+  // 로그 누적
+  state.log.entries.push(...result.newLogEntries);
+  state.monthIndex = result.nextMonthIndex;
+  state.money = result.nextMoney;
+
+  saveToLocal(state);
+  rerender();
+
+  // 로그 맨 아래로
+  els.logBox.scrollTop = els.logBox.scrollHeight;
 });
 
-rerender();
+async function fetchAiEventsBatch(state, schedules, n) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const e = await fetchAiEvent(state, schedules);
+    if (e) out.push(e);
+  }
+  return out;
+}
 
-// ------------------- Gemini highlight fetch -------------------
-async function fetchHighlightCard(workerUrl, state, schedulesByCharId) {
+async function fetchAiEvent(state, schedules) {
+  const { year, month } = monthToYearMonth(state.monthIndex);
   const payload = {
-    monthIndex: state.monthIndex,
+    kind: "event",
+    year, month,
     money: state.money,
     characters: state.characters.map(c => ({
-      id: c.id, name: c.name, mbti: c.mbti, zodiac: c.zodiac,
+      id: c.id,
+      name: c.name,
+      mbti: c.mbti,
+      zodiac: c.zodiac,
       stats: c.stats,
-      schedule: schedulesByCharId[c.id] ?? "rest",
+      schedule: schedules[c.id] ?? "rest",
     })),
-    relations: Object.entries(state.relations).map(([k, v]) => ({
-      key: k, stage: v.stage, affinity: v.affinity, trust: v.trust, tension: v.tension, romance: v.romance, meta: v.meta
-    })),
+    relations: Object.entries(state.relations).slice(0, 12).map(([k, v]) => ({ key: k, ...v })),
   };
 
-  const res = await fetch(workerUrl, {
+  const res = await fetch(state.settings.workerUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  if (!res.ok) return null;
 
-  if (!res.ok) throw new Error("Worker error");
+  const card = await res.json();
 
-  window.__APP_READY = true;
-
-  return await res.json();
+  // log entry 형태로 맞춤
+  return {
+    id: card.id || `ai_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    type: "이벤트",
+    ym: { year, month },
+    title: card.title || "이벤트",
+    text: card.narration || "",
+    dialogues: card.dialogues || [],
+    choices: card.choices || [],
+    meta: { source: "ai", ...card.meta },
+    choiceMade: null,
+  };
 }
+
+rerender();
