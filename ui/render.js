@@ -1,4 +1,4 @@
-import { MAX_CHARS, MBTI_LIST, SCHEDULE_IDS, monthToYearMonth } from "../sim/state.js";
+import { MAX_CHARS, MBTI_LIST, SCHEDULE_IDS, periodFromMonthIndex, ageFromMonthIndex } from "../sim/state.js";
 import { SCHEDULES } from "../sim/rules.js";
 
 export function renderAll(state, els, handlers) {
@@ -8,12 +8,19 @@ export function renderAll(state, els, handlers) {
 }
 
 function renderTime(state, els) {
-  const { year, month } = monthToYearMonth(state.monthIndex);
+  const age = ageFromMonthIndex(state.monthIndex);
+  const p = periodFromMonthIndex(state.monthIndex, 2);
+
+  const periodText =
+    (p.start.year === p.end.year)
+      ? `제 ${p.start.year}년 ${p.start.month}~${p.end.month}월`
+      : `제 ${p.start.year}년 ${p.start.month}월 ~ 제 ${p.end.year}년 ${p.end.month}월`;
+
   els.timeBox.innerHTML = `<div class="kv">
-    <div class="muted">연도</div><div>${year} / 10</div>
-    <div class="muted">월</div><div>${month} / 12</div>
-    <div class="muted">턴</div><div>${state.monthIndex + 1} / 120</div>
+    <div class="muted">나이</div><div>${age}살 (10→20)</div>
+    <div class="muted">기간</div><div>${periodText}</div>
   </div>`;
+
   els.moneyBox.innerHTML = `<div class="kv">
     <div class="muted">소지금</div><div>${state.money}</div>
     <div class="muted">상태</div><div>${state.setupUnlocked ? "설정 가능" : "진행 중(잠김)"}</div>
@@ -43,7 +50,6 @@ function renderChars(state, els, handlers) {
 
   els.charList.innerHTML = state.characters.map(c => {
     const locked = !state.setupUnlocked;
-
     return `
       <div class="card">
         <div class="row" style="justify-content:space-between;">
@@ -56,7 +62,7 @@ function renderChars(state, els, handlers) {
           </div>
 
           <div class="row">
-            <button data-rel="${c.id}">관계</button>
+            <button data-rel="${c.id}" ${state.characters.length < 2 ? "disabled":""}>관계</button>
             <button data-del="${c.id}" ${locked || state.characters.length===1 ? "disabled":""}>삭제</button>
           </div>
         </div>
