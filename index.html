@@ -56,6 +56,36 @@
 
   <div id="modalRoot"></div>
 
+  <script>
+  (function () {
+    const boot = document.createElement("div");
+    boot.id = "boot-indicator";
+    boot.style.position = "fixed";
+    boot.style.right = "12px";
+    boot.style.bottom = "12px";
+    boot.style.padding = "6px 10px";
+    boot.style.border = "1px solid #2a2f45";
+    boot.style.borderRadius = "10px";
+    boot.style.background = "#151823";
+    boot.style.color = "#e7e7e7";
+    boot.style.fontSize = "12px";
+    boot.style.zIndex = "999999";
+    boot.textContent = "부트 스크립트 실행됨 (main.js 로딩 대기)";
+    document.addEventListener("DOMContentLoaded", () => document.body.appendChild(boot));
+
+    window.addEventListener("error", (e) => {
+      boot.textContent = "JS 에러: " + (e.message || "unknown");
+      boot.style.background = "#3a1420";
+    });
+    window.addEventListener("unhandledrejection", (e) => {
+      const msg = (e.reason && e.reason.message) ? e.reason.message : String(e.reason);
+      boot.textContent = "Promise 에러: " + msg;
+      boot.style.background = "#3a1420";
+    });
+  })();
+</script>
+
+
   <script type="module" src="./main.js"></script>
 </body>
 </html>
