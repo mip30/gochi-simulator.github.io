@@ -3,23 +3,22 @@ export function clearLogs(state) {
 }
 
 export function appendLogs(logBox, state, handlers) {
-  // 전체 재렌더(단순)
   const entries = state.log.entries;
 
   let html = "";
-  let lastYM = "";
+  let lastP = "";
 
   for (const e of entries) {
-    const ymKey = `${e.ym.year}-${e.ym.month}`;
-    if (ymKey !== lastYM) {
-      lastYM = ymKey;
-      html += `<div class="logMonth">제 ${e.ym.year}년 ${e.ym.month}월</div>`;
+    const pKey = periodKey(e.period);
+    if (pKey !== lastP) {
+      lastP = pKey;
+      html += `<div class="logMonth">${escapeHtml(periodLabel(e.period))}</div>`;
     }
 
     html += `
       <div class="logEntry" data-eid="${e.id}">
         <div class="title">${escapeHtml(e.title)}</div>
-        <div class="meta">${escapeHtml(e.type)} · ${escapeHtml(metaLine(e))}</div>
+        <div class="meta">${escapeHtml(metaLine(e))}</div>
         <div class="text">${escapeHtml(e.text || "")}</div>
 
         ${(e.dialogues || []).length ? `<div class="sep"></div>` : ""}
@@ -44,7 +43,6 @@ export function appendLogs(logBox, state, handlers) {
 
   logBox.innerHTML = html;
 
-  // choice handlers
   logBox.querySelectorAll(".logEntry button[data-choice]").forEach(btn => {
     btn.addEventListener("click", () => {
       const entryEl = btn.closest(".logEntry");
@@ -56,10 +54,22 @@ export function appendLogs(logBox, state, handlers) {
 }
 
 function metaLine(e) {
+  // ✅ 종류(type) 숨김. 필요한 최소 정보만.
   const s = [];
   if (e.meta?.source) s.push(`source=${e.meta.source}`);
   if (e.meta?.event) s.push(`event=${e.meta.event}`);
   return s.join(" · ");
+}
+
+function periodKey(p) {
+  if (!p) return "na";
+  return `${p.start.year}-${p.start.month}-${p.end.year}-${p.end.month}`;
+}
+
+function periodLabel(p) {
+  if (!p) return "";
+  if (p.start.year === p.end.year) return `제 ${p.start.year}년 ${p.start.month}~${p.end.month}월`;
+  return `제 ${p.start.year}년 ${p.start.month}월 ~ 제 ${p.end.year}년 ${p.end.month}월`;
 }
 
 function escapeHtml(s) {
