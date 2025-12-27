@@ -58,32 +58,43 @@
 
   <script>
   (function () {
-    const boot = document.createElement("div");
-    boot.id = "boot-indicator";
-    boot.style.position = "fixed";
-    boot.style.right = "12px";
-    boot.style.bottom = "12px";
-    boot.style.padding = "6px 10px";
-    boot.style.border = "1px solid #2a2f45";
-    boot.style.borderRadius = "10px";
-    boot.style.background = "#151823";
-    boot.style.color = "#e7e7e7";
-    boot.style.fontSize = "12px";
-    boot.style.zIndex = "999999";
-    boot.textContent = "부트 스크립트 실행됨 (main.js 로딩 대기)";
-    document.addEventListener("DOMContentLoaded", () => document.body.appendChild(boot));
+    const el = document.createElement("div");
+    el.id = "boot-indicator";
+    el.style.position = "fixed";
+    el.style.right = "12px";
+    el.style.bottom = "12px";
+    el.style.padding = "6px 10px";
+    el.style.border = "1px solid #2a2f45";
+    el.style.borderRadius = "10px";
+    el.style.background = "#151823";
+    el.style.color = "#e7e7e7";
+    el.style.fontSize = "12px";
+    el.style.zIndex = "999999";
+    el.textContent = "부트 OK / main.js 로딩 중...";
+    document.addEventListener("DOMContentLoaded", () => document.body.appendChild(el));
 
     window.addEventListener("error", (e) => {
-      boot.textContent = "JS 에러: " + (e.message || "unknown");
-      boot.style.background = "#3a1420";
+      el.textContent = "JS 에러: " + (e.message || "unknown");
+      el.style.background = "#3a1420";
     });
     window.addEventListener("unhandledrejection", (e) => {
       const msg = (e.reason && e.reason.message) ? e.reason.message : String(e.reason);
-      boot.textContent = "Promise 에러: " + msg;
-      boot.style.background = "#3a1420";
+      el.textContent = "Promise 에러: " + msg;
+      el.style.background = "#3a1420";
     });
+
+    // main.js가 실행되면 window.__APP_READY = true로 바뀌게 만들 예정
+    setTimeout(() => {
+      if (window.__APP_READY) {
+        el.textContent = "main.js 실행됨 / UI 준비 완료";
+      } else {
+        el.textContent = "main.js 미실행(또는 초기 에러로 중단)";
+        el.style.background = "#3a1420";
+      }
+    }, 1200);
   })();
 </script>
+
 
 
   <script type="module" src="./main.js"></script>
