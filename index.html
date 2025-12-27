@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>키우기 시뮬레이션 (10년)</title>
+  <title>자캐 프메 시뮬레이터</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
   <div class="wrap">
     <header class="top">
-      <h1>키우기 시뮬레이션 (10년 / 월 단위)</h1>
+      <h1>자캐 프메 시뮬레이터</h1>
       <div class="row">
         <button id="btnNew">새 게임</button>
         <button id="btnSave">저장</button>
@@ -27,7 +27,7 @@
       </div>
     </header>
 
-    <main class="grid">
+    <main class="grid3">
       <section class="panel">
         <h2>캐릭터 (1–4)</h2>
         <div id="charList" class="list"></div>
@@ -41,11 +41,11 @@
         <div id="timeBox" class="row"></div>
         <div id="moneyBox" class="row"></div>
 
-        <h3>이번 달 스케줄</h3>
+        <h3>이번 기간 스케줄 (2개월)</h3>
         <div id="scheduleBox" class="list"></div>
 
         <div class="row">
-          <button id="btnRun">이번 달 진행</button>
+          <button id="btnRun">이번 기간 진행</button>
         </div>
 
         <div class="muted small">
@@ -57,9 +57,15 @@
         <h2>로그</h2>
         <div class="row small">
           <button id="btnClearLog">로그 비우기</button>
-          <span class="muted">이전 월 로그까지 계속 누적됩니다.</span>
+          <span class="muted">기간 단위로 계속 누적됩니다.</span>
         </div>
         <div id="logBox" class="logBox"></div>
+      </section>
+
+      <section class="panel chatPanel">
+        <h2>채팅 로그</h2>
+        <div id="chatControls" class="row small"></div>
+        <div id="chatBox" class="chatBox"></div>
       </section>
     </main>
   </div>
