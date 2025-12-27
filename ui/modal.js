@@ -1,3 +1,4 @@
+// ui/modal.js
 import { applyCardChoice } from "../sim/engine.js";
 
 export function showScriptModal({ rootEl, cards, state, onDone, onNeedHighlight }) {
@@ -14,12 +15,8 @@ export function showScriptModal({ rootEl, cards, state, onDone, onNeedHighlight 
   rootEl.innerHTML = "";
   rootEl.appendChild(back);
 
-  back.addEventListener("click", (e) => {
-    if (e.target === back) {/* block close by backdrop to guarantee read */}
-  });
-
   async function ensureHighlightIfNeeded(card) {
-    if (card.type !== "HIGHLIGHT_PLACEHOLDER") return card;
+    if (card.type !== "하이라이트_대기") return card;
     const generated = await onNeedHighlight?.();
     return generated ?? templateHighlight(state);
   }
@@ -27,25 +24,23 @@ export function showScriptModal({ rootEl, cards, state, onDone, onNeedHighlight 
   function templateHighlight(state) {
     return {
       id: `highlight_tpl_${Date.now()}`,
-      type: "HIGHLIGHT",
-      title: "A quiet stitch in the month",
-      narration: "Not every month has fireworks. Sometimes the highlight is simply enduring—together or alone.",
+      type: "하이라이트",
+      title: "이달의 정리",
+      narration: "폭풍 같은 달도, 아무 일 없는 달도 없다.\n조용한 선택 하나가 다음 달의 분위기를 바꾼다.",
       dialogues: [
-        { speaker: "Narration", line: "A small decision settles into the future." }
+        { speaker: "내레이션", line: "작은 결정은 언젠가 큰 장면이 된다." }
       ],
       choices: [],
-      meta: {}
+      meta: { source: "template" }
     };
   }
 
   async function renderCard() {
     let card = cards[idx];
     card = await ensureHighlightIfNeeded(card);
-
-    // replace placeholder in-place so choices persist correctly
     cards[idx] = card;
 
-    const scriptN = `<div class="scriptN">Script ${idx+1} / ${cards.length}</div>`;
+    const scriptN = `<div class="scriptN">스크립트 ${idx+1} / ${cards.length}</div>`;
     const title = `<h3 class="modalTitle">${escapeHtml(card.title ?? "")}</h3>`;
 
     const narr = card.narration ? `<div class="narr">${escapeHtml(card.narration)}</div>` : "";
@@ -64,7 +59,7 @@ export function showScriptModal({ rootEl, cards, state, onDone, onNeedHighlight 
           </button>
         `).join("")}
       </div>
-      <div class="muted small">${chosen ? `Choice locked: ${chosen}` : "Choose one."}</div>
+      <div class="muted small">${chosen ? `선택 완료: ${chosen}` : "선택지를 고르세요."}</div>
     ` : "";
 
     modal.innerHTML = `
@@ -77,9 +72,9 @@ export function showScriptModal({ rootEl, cards, state, onDone, onNeedHighlight 
         ${dlg}
         ${choiceRow}
         <div class="footerRow">
-          <button id="btnPrev" ${idx===0 ? "disabled":""}>Prev</button>
-          <div class="muted">${hasChoices ? "Choices affect numbers (code-fixed)." : ""}</div>
-          <button id="btnNext">${idx === cards.length-1 ? "Finish" : "Next"}</button>
+          <button id="btnPrev" ${idx===0 ? "disabled":""}>이전</button>
+          <div class="muted">${hasChoices ? "선택 결과는 수치에 영향을 줍니다." : ""}</div>
+          <button id="btnNext">${idx === cards.length-1 ? "닫기" : "다음"}</button>
         </div>
       </div>
     `;
