@@ -4,6 +4,31 @@ import { runOneMonth } from "./sim/engine.js";
 import { renderAll } from "./ui/render.js";
 import { showScriptModal } from "./ui/modal.js";
 
+// --- BOOT INDICATOR (콘솔 없이 실행 여부 확인용) ---
+const boot = document.createElement("div");
+boot.style.position = "fixed";
+boot.style.right = "12px";
+boot.style.bottom = "12px";
+boot.style.padding = "6px 10px";
+boot.style.border = "1px solid #2a2f45";
+boot.style.borderRadius = "10px";
+boot.style.background = "#151823";
+boot.style.color = "#e7e7e7";
+boot.style.fontSize = "12px";
+boot.style.zIndex = "999999";
+boot.textContent = "JS 로딩됨";
+document.addEventListener("DOMContentLoaded", () => document.body.appendChild(boot));
+
+window.addEventListener("error", (e) => {
+  boot.textContent = "JS 에러: " + (e.message || "unknown");
+  boot.style.background = "#3a1420";
+});
+window.addEventListener("unhandledrejection", (e) => {
+  boot.textContent = "Promise 에러: " + (e.reason?.message || String(e.reason));
+  boot.style.background = "#3a1420";
+});
+
+
 /**
  * 1) Worker URL 내장
  * 아래 값을 본인 Worker URL로 바꿔서 커밋하면 됩니다.
