@@ -4,6 +4,10 @@ import { runOneMonth } from "./sim/engine.js";
 import { renderAll } from "./ui/render.js";
 import { showScriptModal } from "./ui/modal.js";
 
+const boot = document.getElementById("boot-indicator");
+if (boot) boot.textContent = "main.js 실행됨 (이제 버튼 클릭 가능해야 함)";
+
+
 // --- BOOT INDICATOR (콘솔 없이 실행 여부 확인용) ---
 const boot = document.createElement("div");
 boot.style.position = "fixed";
