@@ -1,17 +1,17 @@
 import {
   newGameState, newCharacter, MAX_CHARS,
-  monthToYearMonth, MBTI_LIST,
+  periodFromMonthIndex,
   getZodiacFromBirthday
 } from "./sim/state.js";
-import { runOneMonth, applyChoice } from "./sim/engine.js";
+import { runOnePeriod, applyChoice } from "./sim/engine.js";
 import { renderAll } from "./ui/render.js";
 import { showRelationsModal } from "./ui/relations_modal.js";
 import { appendLogs, clearLogs } from "./ui/log.js";
+import { renderChat } from "./ui/chat.js";
 
-// ✅ Worker URL 자동 고정
 const WORKER_URL = "https://gochi-simulator.madeinpain30.workers.dev/";
 
-const LS_KEY = "raising_sim_save_v3";
+const LS_KEY = "raising_sim_save_v5";
 const saveToLocal = (s) => localStorage.setItem(LS_KEY, JSON.stringify(s));
 const loadFromLocal = () => {
   const raw = localStorage.getItem(LS_KEY);
@@ -36,6 +36,9 @@ const els = {
   moneyBox: document.getElementById("moneyBox"),
 
   logBox: document.getElementById("logBox"),
+  chatControls: document.getElementById("chatControls"),
+  chatBox: document.getElementById("chatBox"),
+
   modalRoot: document.getElementById("modalRoot"),
 };
 
@@ -53,22 +56,26 @@ const handlers = {
       birthM: 1,
       birthD: 1,
     });
-    // ✅ 생일 기반 별자리 자동
     nc.zodiac = getZodiacFromBirthday(nc.birthday.m, nc.birthday.d);
 
     state.characters.push(nc);
+    ensureRelations();
     rerender();
   },
 
   onOpenRelations: (fromId) => {
+    ensureRelations();
     showRelationsModal({
       rootEl: els.modalRoot,
       state,
       fromId,
       setupUnlocked: state.setupUnlocked,
-      onChangePreset: (toId, presetId) => {
+      // ✅ key로 직접 저장
+      onChangePresetByKey: (key, presetId) => {
         if (!state.setupUnlocked) return;
-        state.relations[`${fromId}->${toId}`].preset = presetId;
+        if (!state.relations[key]) return;
+        state.relations[key].preset = presetId;
+        saveToLocal(state);
         rerender();
       },
     });
@@ -82,7 +89,6 @@ const handlers = {
     if (patch.name != null) c.name = String(patch.name).slice(0, 20) || c.name;
     if (patch.mbti != null) c.mbti = patch.mbti;
 
-    // ✅ 생일 변경 시 별자리 자동 갱신
     if (patch.birthM != null) c.birthday.m = Number(patch.birthM);
     if (patch.birthD != null) c.birthday.d = Number(patch.birthD);
 
@@ -110,8 +116,19 @@ const handlers = {
   onApplyChoice: (entryId, choiceTag) => {
     const entry = state.log.entries.find(e => e.id === entryId);
     if (!entry || entry.choiceMade) return;
+
     entry.choiceMade = choiceTag;
-    applyChoice(state, entry, choiceTag);
+    const followUps = applyChoice(state, entry, choiceTag) || [];
+    if (followUps.length) state.log.entries.push(...followUps);
+
+    saveToLocal(state);
+    rerender();
+    els.logBox.scrollTop = els.logBox.scrollHeight;
+    els.chatBox.scrollTop = els.chatBox.scrollHeight;
+  },
+
+  onSetChatPair: (aId, bId) => {
+    state.ui.chatPair = { aId, bId };
     saveToLocal(state);
     rerender();
   },
@@ -141,20 +158,20 @@ function rerender() {
 
   els.chkGemini.checked = !!state.settings.useGemini;
 
-  if (state.setupUnlocked) {
-    els.setupHint.textContent = "초기 설정 단계: 캐릭터/관계를 정한 뒤 ‘이번 달 진행’을 누르면 잠깁니다.";
-  } else {
-    els.setupHint.textContent = "진행 중: 캐릭터/관계 설정은 잠겨 있습니다.";
-  }
+  els.setupHint.textContent = state.setupUnlocked
+    ? "초기 설정 단계: 캐릭터/관계를 정한 뒤 ‘이번 기간 진행’을 누르면 잠깁니다."
+    : "진행 중: 캐릭터/관계 설정은 잠겨 있습니다.";
 
   renderAll(state, els, handlers);
   appendLogs(els.logBox, state, handlers);
+
+  renderChat(state, els.chatControls, els.chatBox, (aId, bId) => handlers.onSetChatPair(aId, bId));
 }
 
 els.btnAddChar.addEventListener("click", handlers.onAddChar);
 
 els.btnNew.addEventListener("click", () => {
-  if (!confirm("새 게임을 시작할까요? (저장되지 않은 진행은 사라집니다)")) return;
+  if (!confirm("새 게임을 시작할까요?")) return;
   state = newGameState();
   state.settings.workerUrl = WORKER_URL;
   rerender();
@@ -171,10 +188,13 @@ els.btnLoad.addEventListener("click", () => {
   state = loaded;
   state.settings.workerUrl = WORKER_URL;
 
-  // ✅ 기존 저장 데이터에 별자리가 비어있거나 고정값이면 생일 기준으로 재계산
+  // 저장 호환: 별자리 재계산 + 관계 보정
   for (const c of state.characters) {
-    c.zodiac = getZodiacFromBirthday(c.birthday?.m ?? 1, c.birthday?.d ?? 1);
+    const m = c.birthday?.m ?? 1;
+    const d = c.birthday?.d ?? 1;
+    c.zodiac = getZodiacFromBirthday(m, d);
   }
+  ensureRelations();
 
   rerender();
 });
@@ -209,11 +229,11 @@ els.btnRun.addEventListener("click", async () => {
 
   if (state.setupUnlocked) state.setupUnlocked = false;
 
-  const result = runOneMonth(state, schedules);
+  const result = runOnePeriod(state, schedules);
 
-  // ✅ AI 이벤트 추가 (URL 고정이므로 그대로 사용)
+  // AI 이벤트 (선택): 2개월 기간에 맞춰 조금 늘리되 과도하지 않게
   if (state.settings.useGemini) {
-    const extraN = 3 + Math.min(3, state.characters.length);
+    const extraN = 2 + Math.min(2, state.characters.length);
     const aiEntries = await fetchAiEventsBatch(state, schedules, extraN).catch(() => []);
     result.newLogEntries.push(...aiEntries);
   }
@@ -225,6 +245,7 @@ els.btnRun.addEventListener("click", async () => {
   saveToLocal(state);
   rerender();
   els.logBox.scrollTop = els.logBox.scrollHeight;
+  els.chatBox.scrollTop = els.chatBox.scrollHeight;
 });
 
 async function fetchAiEventsBatch(state, schedules, n) {
@@ -237,10 +258,11 @@ async function fetchAiEventsBatch(state, schedules, n) {
 }
 
 async function fetchAiEvent(state, schedules) {
-  const { year, month } = monthToYearMonth(state.monthIndex);
+  const period = periodFromMonthIndex(state.monthIndex, 2);
+
   const payload = {
     kind: "event",
-    year, month,
+    period,
     money: state.money,
     characters: state.characters.map(c => ({
       id: c.id,
@@ -264,14 +286,13 @@ async function fetchAiEvent(state, schedules) {
 
   return {
     id: card.id || `ai_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-    type: "이벤트",
-    ym: { year, month },
-    title: card.title || "이벤트",
+    title: card.title || "상황",
     text: card.narration || "",
     dialogues: card.dialogues || [],
     choices: card.choices || [],
-    meta: { source: "ai", ...card.meta },
+    meta: { source: "ai", ...card.meta, kind: "event" },
     choiceMade: null,
+    period,
   };
 }
 
