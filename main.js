@@ -207,5 +207,8 @@ async function fetchHighlightCard(workerUrl, state, schedulesByCharId) {
   });
 
   if (!res.ok) throw new Error("Worker error");
+
+  window.__APP_READY = true;
+
   return await res.json();
 }
